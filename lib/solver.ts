@@ -3,25 +3,31 @@ import path from 'path';
 
 // Singleton to hold loaded words
 let validWords: Set<string> | null = null;
+let lastLoadedTime: number = 0;
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
 function loadWords(): Set<string> {
-  if (validWords) return validWords;
+  const filePath = path.join(process.cwd(), 'data', 'words.txt');
 
   try {
-    const filePath = path.join(process.cwd(), 'data', 'words.txt');
-    const fileContent = fs.readFileSync(filePath, 'utf-8');
-    validWords = new Set(
-      fileContent
-        .split(/\r?\n/)
-        .map((w) => w.trim().toLowerCase())
-        .filter((w) => w.length > 0) // words_alpha has no numbers
-    );
-    console.log(`Loaded ${validWords.size} words.`);
+    const stats = fs.statSync(filePath);
+    // Reload if file has changed or never loaded
+    if (!validWords || stats.mtimeMs > lastLoadedTime) {
+      console.log('Loading words.txt (changed or first load)...');
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      validWords = new Set(
+        fileContent
+          .split(/\r?\n/)
+          .map((w) => w.trim().toLowerCase())
+          .filter((w) => w.length > 0)
+      );
+      lastLoadedTime = stats.mtimeMs;
+      console.log(`Loaded ${validWords.size} words.`);
+    }
   } catch (error) {
     console.error('Failed to load words:', error);
-    validWords = new Set();
+    if (!validWords) validWords = new Set();
   }
   return validWords!;
 }
@@ -29,7 +35,7 @@ function loadWords(): Set<string> {
 function getNeighbors(word: string, mode: 'weaver' | 'weaverx', vocabulary: Set<string>): string[] {
   const neighbors: string[] = [];
   const chars = word.split('');
-  
+
   // 1. Substitutions (Weaver & Weaver X)
   for (let i = 0; i < chars.length; i++) {
     const original = chars[i];
@@ -59,12 +65,12 @@ function getNeighbors(word: string, mode: 'weaver' | 'weaverx', vocabulary: Set<
     // 3. Deletions
     // Delete at every position
     if (word.length > 1) { // Assuming words must be at least 1 char? Usually 2+ for puzzles basically
-        for (let i = 0; i < chars.length; i++) {
+      for (let i = 0; i < chars.length; i++) {
         const candidate = word.slice(0, i) + word.slice(i + 1);
         if (vocabulary.has(candidate)) {
-            neighbors.push(candidate);
+          neighbors.push(candidate);
         }
-        }
+      }
     }
   }
 
@@ -96,10 +102,10 @@ export function solve(start: string, end: string, mode: 'weaver' | 'weaverx'): S
   // BFS
   const queue: string[][] = [[startLower]]; // Queue of paths
   const visited = new Set<string>([startLower]);
-  
+
   // Safety limits
   let iterations = 0;
-  const MAX_ITERATIONS = 200000; 
+  const MAX_ITERATIONS = 200000;
 
   while (queue.length > 0) {
     iterations++;
@@ -110,14 +116,14 @@ export function solve(start: string, end: string, mode: 'weaver' | 'weaverx'): S
     const path = queue.shift()!;
     const current = path[path.length - 1];
 
-    if (path.length > 50) {
-        // Depth limit to prevent infinite loops in weird graph cycles if visited check fails (unlikely)
-        continue;
+    if (path.length >= 11) {
+      // Depth limit (10 steps = 11 words)
+      continue;
     }
 
     // Optimization: If current is neighbor of end, we are done + 1
     // Actually, simple BFS is fine.
-    
+
     const neighbors = getNeighbors(current, mode, vocabulary);
 
     for (const neighbor of neighbors) {
